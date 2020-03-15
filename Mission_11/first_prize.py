@@ -71,7 +71,7 @@ test = sort_dataset(pd.read_csv(os.path.join(data_path,'test.csv')))
 
 # Weather data
 # '인천시간별기상자료(16-18)_축소_7월1일.csv' 파일은 인코딩 문제가 있어 텍스트로 불러옵니다.
-with open(os.path.join(data_path,'인천_시간별__기상자료(16-18)_축소__7월1일.csv')) as file:
+with open(os.path.join(data_path,'인천_시간별__기상자료(16-18)_축소__7월1일.csv'), encoding = 'euc-kr') as file:
     additional = []
     for line in file.readlines():
         line = line.replace(',\n', ',nan')
@@ -165,8 +165,7 @@ def split_day(_times, _datas):
     This function splits power consumption data and weather data by days.
     '''
     for time in _times:
-        if time.time().hour == 0: # 매일 0시마다
-            print(time)
+        if time.time().hour == 0: # 첫 0 시 일자
             ref_time = time.date()
             break
     times = []
@@ -177,23 +176,20 @@ def split_day(_times, _datas):
         time = time.date()
         data = _datas[i]
 
-        if ref_time > time:# ref_time &gt; time:
+        if ref_time > time: # ref_time &gt; time:
             pass
 
         elif ref_time == time:
-            # print('elif')
             data_tmp.append(data)
 
         else:
-            # print('else ', ref_time)
-            # print('time: ',time)
-            times.append(ref_time)
-            datas.append(data_tmp)
-            ref_time = time
-            data_tmp = [data]
+            times.append(ref_time) # 당일 시간 정보는 times로 모으
+            datas.append(data_tmp) # 당일 데이터는 datas로 모으기
+            ref_time = time # 다음 시간으로 변경
+            data_tmp = [data] # 전날 00시 데이터로 초기화
 
-    if ref_time not in times:
-        if len(data_tmp) == 24:
+    if ref_time not in times: # 마지막 ref_time이 times에 포함되어 있지 않다면
+        if len(data_tmp) == 24: # data의 갯수가 24개일 때, 포함시킨다.
             times.append(ref_time)
             datas.append(data_tmp)
     times = np.array(times)
@@ -212,14 +208,7 @@ train_meter_ids = train.columns[1:]
 test_meter_ids = test.columns[1:]
 
 
-# Downsampling (a day)
-temperature = np.mean(split_day(add_times, temperature)[1], axis=1)
-rainfall = np.mean(split_day(add_times, rainfall)[1], axis=1)
-wind = np.mean(split_day(add_times, wind)[1], axis=1)
-humidity = np.mean(split_day(add_times, humidity)[1], axis=1)
-snowfall = np.mean(split_day(add_times, snowfall)[1], axis=1)
-add_times, cloud = split_day(add_times, cloud)
-cloud = np.mean(cloud, axis=1)
+
 
 tt = pd.DataFrame(data = {'add_times': add_times,
                      'temperature':temperature,
@@ -229,18 +218,20 @@ tt = pd.DataFrame(data = {'add_times': add_times,
                      'snowfall': snowfall,
                      'cloud':cloud
                      })
+
+
+# Downsampling (a day)
+temperature = np.mean(split_day(add_times, temperature)[1], axis=1)
+rainfall = np.mean(split_day(add_times, rainfall)[1], axis=1)
+wind = np.mean(split_day(add_times, wind)[1], axis=1)
+humidity = np.mean(split_day(add_times, humidity)[1], axis=1)
+snowfall = np.mean(split_day(add_times, snowfall)[1], axis=1)
+#add_times, cloud = split_day(add_times, cloud)
+#cloud = np.mean(cloud, axis=1)
+
 tt['date'] = [x.date() for x in tt.add_times]
 
 tt2 = tt.groupby('date')['temperature'].mean()
-
-temperature2 = np.mean(split_day(add_times, temperature)[1], axis=1)
-tt2.values
-np.equal(temperature2, tt2.values)
-
-
-
-temperature2[0]
-
 
 # Make additional data set
 additional_data = np.array([
@@ -262,10 +253,11 @@ additional_data = np.array([
 train_id_num = []
 train_data_num = []
 for meter_id in train_meter_ids:
-    meter_num = int(meter_id.replace('NX', ''))
-    valid_num = len(np.where(train[meter_id] > 0.0)[0])
+    meter_num = int(meter_id.replace('NX', '')) # 데이터가 몇번째 컬럼에 위치하는지 확인
+    valid_num = len(np.where(train[meter_id] > 0.0)[0]) # 0초과 데이터만 갯수 확인
     train_id_num.append(meter_num)
     train_data_num.append(valid_num)
+
 test_id_num = []
 test_data_num = []
 for meter_id in test_meter_ids:
