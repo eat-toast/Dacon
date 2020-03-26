@@ -100,71 +100,23 @@ idx = df.value > 0
 df = df.loc[idx]
 df.head()
 
+df.loc[df.sensor=='Y00', 'value'].rolling(window=6, min_periods=1).mean()
 
-
-####################
-X_train = train.loc[:, "X00":"X39"]
-y_train = train["Y18"]
-
-X_test = test.loc[:, "X00":"X39"]
-
-lgb_train = lgb.Dataset(X_train, label=y_train)
-
-# custom metric -- 대회 목적에 맞는 방법으로 변경 (자카종신 님 코드)
-def mse1(y_pred, dataset):
-    y_true = dataset.get_label()
-
-    diff = abs(y_true - y_pred)
-    less_then_one = np.array([0 if x < 1 else 1 for x in diff])
-
-    y_pred = less_then_one * y_pred
-    y_true = less_then_one * y_true
-
-    score = mean_squared_error(y_true, y_pred)
-
-    return 'score', score, False
-
-# GeonwooKim님 코드
-lgb_param = {
-    "objective":"regression",
-    "learning_rate":0.01
-}
-
-print("cv start")
-cv_result = lgb.cv(
-    lgb_param,
-    lgb_train,
-    feval=mse1,
-    num_boost_round=99999,
-    nfold=5,
-    early_stopping_rounds=10,
-    stratified=False,
-    verbose_eval=10
-)
-
-print("train start")
-lgb_model = lgb.train(
-    lgb_param,
-    lgb_train,
-    num_boost_round=len(cv_result["l2-mean"])
-)
-
-pred = lgb_model.predict(X_test)
-
-#######
-# 제출
-submission = pd.read_csv(os.path.join(data_path, 'sample_submission.csv'))
-submission['Y18'] = pred
-submission.to_csv('submit/lgb_base_line_20200923.csv',index = False)
-
-
-
-
-
+from pandasql import sqldf
+pysqldf = lambda q: sqldf(q, globals()) # sql ready!
+qry = '''
+select 
+from df
+group by sensor
+'''
+user_claim_cnt = sqldf(qry)
 
 ####################
 X_train = df.loc[:, df.columns[3:]]
 y_train = df.loc[:, 'value']
+
+df.sensor=='Y18
+
 
 X_test = test.iloc[:, 1:]
 
@@ -215,4 +167,4 @@ pred = lgb_model.predict(X_test)
 # 제출
 submission = pd.read_csv(os.path.join(data_path, 'sample_submission.csv'))
 submission['Y18'] = pred
-submission.to_csv('submit/lgb_base_line5_20200925.csv',index = False)
+submission.to_csv('submit/lgb_base_line3_20200923.csv',index = False)

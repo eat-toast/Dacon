@@ -98,7 +98,7 @@ isp = 100  # index of where to start the predictions
 assert isp > 0
 
 for i in tqdm(range(isp, len(y))):
-    ada.fit(X.iloc[:i], y[:i])
+    ada.fit(X.iloc[(i-100):i], y[(i-100):i])
     y_pred[i] = ada.predict(X.iloc[i, :].values.reshape((1, -1)))[0]
 
 y_pred = pd.Series(data=y_pred, index=y.index)
