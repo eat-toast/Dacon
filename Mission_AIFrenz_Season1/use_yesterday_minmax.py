@@ -26,25 +26,19 @@ test = pd.read_csv(os.path.join(data_path, 'test.csv'))
 # test.csv
 # -     train.csv 기간 이후 80일 간의 기상청 데이터 (X00~X39)
 
-
-
-temperature_name = ["X00","X07","X28","X31","X32"] #기온
+temperature_name = ["X07","X31","X00","X32","X28"] #기온
 localpress_name  = ["X01","X06","X22","X27","X29"] #현지기압
 speed_name       = ["X02","X03","X18","X24","X26"] #풍속
 water_name       = ["X04","X10","X21","X36","X39"] #일일 누적강수량
 press_name       = ["X05","X08","X09","X23","X33"] #해면기압
-sun_name         = ["X11","X14","X16","X19","X34"] #일일 누적일사량
-humidity_name    = ["X12","X20","X30","X37","X38"] #습도
+sun_name         = ["X34","X11","X14","X16","X19"] #일일 누적일사량
+humidity_name    = ["X37","X12","X20","X30","X38"] #습도
 direction_name   = ["X13","X15","X17","X25","X35"] #풍향
 
 # Y18번의 데이터를 나머지들의 평균값으로 채운다. (GeonwooKim 님 코드)
 t = train["Y18"].isna()
 null_index = t[t==True].index
 train.loc[null_index, "Y18"] = train.loc[null_index, "Y00":"Y17"].mean(axis=1)
-
-# null값을 채워주고, 데이터의 구조를 살핀다. (뚱냥이 님 코드)
-print('total number of sample in train :',train.shape[0])
-print('total number of Y18 in train :',train.shape[0] - train['Y18'].isnull().sum())
 
 
 # id 변수를 삼각함수를 이용해 시간 변수 추가 (26님 코드 -- 기상 캐스터 잔나)
@@ -54,7 +48,6 @@ hour= pd.Series((train.index%144/6).astype(int))
 minute_test = (test.id%144).astype(int)
 hour_test = pd.Series((test.index%144/6).astype(int))
 
-
 min_in_day = 24*6
 hour_in_day = 24
 
@@ -63,7 +56,6 @@ minute_cos = np.cos(np.pi*minute/min_in_day)
 
 hour_sin  = np.sin(np.pi*hour/hour_in_day)
 hour_cos  = np.cos(np.pi*hour/hour_in_day)
-
 
 # 그림을 보니, sin이 더 맞는 것 같아 sin 추가
 train['minute_sin'] = minute_sin
@@ -79,22 +71,19 @@ test['hour_sin'] = hour_sin_test
 date = 0 # 날자 데이터 추가
 for i in range(0, train.shape[0], 144):
     train.loc[i:(i+144),'datekey'] = date
-    train.loc[i, 'date_start'] = 1
-    train.loc[i+143, 'date_end'] = 1
+    # train.loc[i, 'date_start'] = 1
+    # train.loc[i+143, 'date_end'] = 1
     date += 1
 train = train.fillna(0)
 
 date = 0 # 날자 데이터 추가 - test
 for i in range(0, test.shape[0], 144):
     test.loc[i:(i+144),'datekey'] = date
-    test.loc[i, 'date_start'] = 1
-    test.loc[i + 143, 'date_end'] = 1
+    # test.loc[i, 'date_start'] = 1
+    # test.loc[i + 143, 'date_end'] = 1
     date += 1
 test = test.fillna(0)
 
-
-
-df3
 
 
 # data-set 구조 바꾸기 (뚱냥이 님 코드)
@@ -111,7 +100,9 @@ df = pd.melt(train,
 
 df = pd.merge(df,train.drop(columns=sensor_list), on='id' ) # 합치기.
 df = df.dropna() # 결측제거.
-idx = df.value > 0
+
+# Y18 데이터만 이용하기
+idx = (df.value > 0) & (df.sensor == 'Y18')
 df = df.loc[idx]
 
 
@@ -120,6 +111,7 @@ idx = df.datekey > 0
 
 tt = df.loc[idx,].groupby(['datekey', 'sensor'])['value'].agg({ 'min_value':np.min, 'max_value':np.max})
 tt = tt.reset_index()
+tt.datekey = tt.datekey+1
 
 df2 = pd.merge(df.loc[idx], tt, how = 'left', on =  ['datekey', 'sensor'])
 
@@ -131,13 +123,12 @@ df.loc[~idx, 'max_value'] = 0
 df3 = pd.concat([df.loc[~idx], df2], axis = 0)
 
 # 필요없는 컬럼 제거
-df3 = df3.drop(['datekey', 'date_start', 'date_end'], axis=1)
+df3 = df3.drop(['datekey'], axis=1)
 
 ####################
-X_train = df3.loc[:, df3.columns[3:]]
-y_train = df3.loc[:, 'value']
-
-X_test = test.iloc[:, 1:]
+# 모델 만들기
+X_train = df3.loc[:, df3.columns[3:]].reset_index(drop=True)
+y_train = df3.loc[:, 'value'].reset_index(drop =True)
 
 lgb_train = lgb.Dataset(X_train, label=y_train)
 
@@ -182,46 +173,51 @@ lgb_model = lgb.train(
     lgb_train,
     num_boost_round=len(cv_result["l2-mean"])
 )
+y_pred = lgb_model.predict(X_train)
 
-
+# 시각화 확인
+    # 중요도
 lgb.plot_importance(lgb_model, max_num_features=30)
+    # train 잘 맞는지 확인
+    # train 데이터는 아주 잘 맞추고 있다.
+fig, ax = plt.subplots(1, 1, figsize=(15,7))
+ax.plot(y_train)
+ax.plot(y_pred)
+plt.tight_layout()
+
 
 
 
 # test 제출 파일 만들기
-
 #######
 # 제출
 submission = pd.read_csv(os.path.join(data_path, 'sample_submission.csv'))
-
 submission2 = pd.merge(submission, test[['id', 'datekey']], how = 'left', on = 'id')
 
 
-df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].min()
-df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].max()
-
+X_test = test.loc[:, test.columns[1:]]    # test.loc[:, test.columns[1:(-1)]] # id & datekey 제외
 X_test['min_value'] = 0
 X_test['max_value'] = 0
 
-X_test.loc[X_test.datekey == 0, 'min_value'] = df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].min()
-X_test.loc[X_test.datekey == 0, 'max_value'] = df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].max()
+X_test.loc[X_test.datekey == 0, 'min_value'] = tt.iloc[-1,].min_value
+X_test.loc[X_test.datekey == 0, 'max_value'] = tt.iloc[-1,].max_value
 
-X_test = X_test.drop(['date_start', 'date_end'], axis=1)
-
-
+# 일자별 예측
 X_test_hat = X_test[X_test.datekey == 0].drop('datekey', axis = 1)
 pred = lgb_model.predict(X_test_hat)
 submission2.loc[submission2.datekey == 0, 'Y18'] = pred
 
 X_test.loc[X_test.datekey == 1, 'min_value'] = pred.min()
 X_test.loc[X_test.datekey == 1, 'max_value'] = pred.max()
-
+del pred
 for day in range(1, 80):
     X_test_hat = X_test[X_test.datekey == day].drop('datekey', axis = 1)
     pred = lgb_model.predict(X_test_hat)
     submission2.loc[submission2.datekey == day, 'Y18'] = pred
-
+    del pred
     print(day)
 
+
+
 submission2 = submission2.drop('datekey', axis = 1)
-submission2.to_csv('submit/lgb_day_max_min_20200331.csv',index = False)
+submission2.to_csv('submit/lgb_20200404.csv',index = False)
