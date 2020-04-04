@@ -109,7 +109,7 @@ df = df.loc[idx]
 # 전날 최고, 최저 기온 만들기
 idx = df.datekey > 0
 
-tt = df.loc[idx,].groupby(['datekey', 'sensor'])['value'].agg({ 'min_value':np.min, 'max_value':np.max})
+tt = df.loc[idx,].groupby(['datekey', 'sensor'])['value'].agg({ 'min_value':np.min, 'max_value':np.max, 'mean_value': np.mean})
 tt = tt.reset_index()
 tt.datekey = tt.datekey+1
 
@@ -118,12 +118,22 @@ df2 = pd.merge(df.loc[idx], tt, how = 'left', on =  ['datekey', 'sensor'])
 # 이전 데이터가 없을 때는 0으로 채워 넣는다
 df.loc[~idx, 'min_value'] = 0
 df.loc[~idx, 'max_value'] = 0
+df.loc[~idx, 'mean_value'] = 0
 
 # 두 데이터 프레임 합치기
 df3 = pd.concat([df.loc[~idx], df2], axis = 0)
 
+# X07 lag 추가
+df3['X07_lag_1'] =  df3['X07'].shift(144).fillna(0)
+df3['X07_lag_2'] =  df3['X07'].shift(144*2).fillna(0)
+df3['X07_lag_3'] =  df3['X07'].shift(144*3).fillna(0)
+df3['X07_lag_4'] =  df3['X07'].shift(144*4).fillna(0)
+df3['X07_lag_5'] =  df3['X07'].shift(144*5).fillna(0)
+
 # 필요없는 컬럼 제거
 df3 = df3.drop(['datekey'], axis=1)
+
+
 
 ####################
 # 모델 만들기
@@ -198,9 +208,22 @@ submission2 = pd.merge(submission, test[['id', 'datekey']], how = 'left', on = '
 X_test = test.loc[:, test.columns[1:]]    # test.loc[:, test.columns[1:(-1)]] # id & datekey 제외
 X_test['min_value'] = 0
 X_test['max_value'] = 0
+X_test['mean_value'] = 0
+
 
 X_test.loc[X_test.datekey == 0, 'min_value'] = tt.iloc[-1,].min_value
 X_test.loc[X_test.datekey == 0, 'max_value'] = tt.iloc[-1,].max_value
+X_test.loc[X_test.datekey == 0, 'mean_value'] = tt.iloc[-1,].mean_value
+
+
+# lag 변수 추가
+X_test['X07_lag_1'] =  X_test['X07'].shift(144).fillna(0)
+X_test['X07_lag_2'] =  X_test['X07'].shift(144*2).fillna(0)
+X_test['X07_lag_3'] =  X_test['X07'].shift(144*3).fillna(0)
+X_test['X07_lag_4'] =  X_test['X07'].shift(144*4).fillna(0)
+X_test['X07_lag_5'] =  X_test['X07'].shift(144*5).fillna(0)
+
+
 
 # 일자별 예측
 X_test_hat = X_test[X_test.datekey == 0].drop('datekey', axis = 1)
@@ -210,6 +233,7 @@ submission2.loc[submission2.datekey == 0, 'Y18'] = pred
 X_test.loc[X_test.datekey == 1, 'min_value'] = pred.min()
 X_test.loc[X_test.datekey == 1, 'max_value'] = pred.max()
 del pred
+
 for day in range(1, 80):
     X_test_hat = X_test[X_test.datekey == day].drop('datekey', axis = 1)
     pred = lgb_model.predict(X_test_hat)
@@ -220,4 +244,4 @@ for day in range(1, 80):
 
 
 submission2 = submission2.drop('datekey', axis = 1)
-submission2.to_csv('submit/lgb_20200404.csv',index = False)
+submission2.to_csv('submit/lgb_20200404_3.csv',index = False)
