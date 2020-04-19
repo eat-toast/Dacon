@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import lightgbm as lgb
 from sklearn.metrics import mean_squared_error
 
-os.chdir(os.path.join(os.getcwd(), 'Mission_AIFrenz_Season1'))# 디렉토리 변경
+# os.chdir(os.path.join(os.getcwd(), 'Mission_AIFrenz_Season1'))# 디렉토리 변경
 data_path =  os.path.join(os.getcwd(), 'data')
 
 train = pd.read_csv(os.path.join(data_path, 'train.csv'))
@@ -28,7 +28,7 @@ test = pd.read_csv(os.path.join(data_path, 'test.csv'))
 
 
 
-temperature_name = ["X00","X07","X28","X31","X32"] #기압
+temperature_name = ["X00","X07","X28","X31","X32"] #기온
 localpress_name  = ["X01","X06","X22","X27","X29"] #현지기압
 speed_name       = ["X02","X03","X18","X24","X26"] #풍속
 water_name       = ["X04","X10","X21","X36","X39"] #일일 누적강수량
@@ -209,10 +209,43 @@ lgb_model = lgb.train(
     num_boost_round=len(cv_result["l2-mean"])
 )
 
-pred = lgb_model.predict(X_test)
+Y_hat_test = lgb_model.predict(X_test)
+
+Y_hat = lgb_model.predict(X_train)
+Y_hat = pd.DataFrame(Y_hat)
+
+X_train['Y_hat'] = Y_hat.values
+
+lgb_train2 = lgb.Dataset(X_train, label=y_train)
+
+X_test_2 = X_test.copy()
+X_test_2['Y_hat'] =Y_hat_test
+
+
+
+print("cv start")
+cv_result2 = lgb.cv(
+    lgb_param,
+    lgb_train2,
+    feval=mse1,
+    num_boost_round=99999,
+    nfold=5,
+    early_stopping_rounds=100,
+    stratified=False,
+    verbose_eval=10
+)
+
+print("train start")
+lgb_model2 = lgb.train(
+    lgb_param,
+    lgb_train2,
+    num_boost_round=len(cv_result2["l2-mean"])
+)
+
+Y_hat_hat = lgb_model.predict(X_test_2)
 
 #######
 # 제출
 submission = pd.read_csv(os.path.join(data_path, 'sample_submission.csv'))
-submission['Y18'] = pred
-submission.to_csv('submit/lgb_base_line5_20200925.csv',index = False)
+submission['Y18'] = Y_hat_hat
+submission.to_csv('lgb_.csv',index = False)

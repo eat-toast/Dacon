@@ -126,25 +126,41 @@ df.loc[~idx, 'mean_value'] = 0
 df3 = pd.concat([df.loc[~idx], df2], axis = 0)
 
 # X07 lag 추가
-for x in X_list:
-    for lag in [1,2,3,4,5]:
-        var_name = x+'_lag_'+str(lag)
-        df3[var_name] = df3[x].shift(144 * lag).fillna(0)
-# df3['X07_lag_1'] =  df3['X07'].shift(144).fillna(0)
-# df3['X07_lag_2'] =  df3['X07'].shift(144*2).fillna(0)
-# df3['X07_lag_3'] =  df3['X07'].shift(144*3).fillna(0)
-# df3['X07_lag_4'] =  df3['X07'].shift(144*4).fillna(0)
-# df3['X07_lag_5'] =  df3['X07'].shift(144*5).fillna(0)
+# for x in X_list:
+#     for lag in [1,2,3,4,5]:
+#         var_name = x+'_lag_'+str(lag)
+#         df3[var_name] = df3[x].shift(144 * lag).fillna(0)
+
+df3['X07_lag_1'] =  df3['X07'].shift(144).fillna(0)
+df3['X07_lag_2'] =  df3['X07'].shift(144*2).fillna(0)
+df3['X07_lag_3'] =  df3['X07'].shift(144*3).fillna(0)
+df3['X07_lag_4'] =  df3['X07'].shift(144*4).fillna(0)
+df3['X07_lag_5'] =  df3['X07'].shift(144*5).fillna(0)
+
+
+
+# 44계단씩 올라가기, 100계단씩 내려오기
+minute = (train.id%144).astype(int)
+hour= pd.Series((train.index%144/6).astype(int))
+
+
+
 
 # 필요없는 컬럼 제거
-df3 = df3.drop(['datekey'], axis=1)
-
+# df3 = df3.drop(['datekey'], axis=1)
+df3 =df3.drop(temperature_name, axis = 1)
+train_idx = df3.datekey < 29
 
 
 ####################
 # 모델 만들기
-X_train = df3.loc[:, df3.columns[3:]].reset_index(drop=True)
-y_train = df3.loc[:, 'value'].reset_index(drop =True)
+# X_train = df3.loc[:, df3.columns[3:]].reset_index(drop=True)
+X_train = df3.loc[train_idx, df3.columns[3:]].drop('datekey', axis = 1).reset_index(drop=True)
+X_val = df3.loc[~train_idx, df3.columns[3:]].drop('datekey', axis = 1).reset_index(drop=True)
+
+y_train = df3.loc[train_idx, 'value'].reset_index(drop =True)
+y_val =  df3.loc[~train_idx, 'value'].reset_index(drop =True)
+
 
 lgb_train = lgb.Dataset(X_train, label=y_train)
 
@@ -173,7 +189,7 @@ cv_result = lgb.cv(
     lgb_param,
     lgb_train,
     feval=mse1,
-    num_boost_round=3000,
+    num_boost_round=300,
     nfold=5,
     early_stopping_rounds=10,
     stratified=False,
@@ -189,18 +205,18 @@ lgb_model = lgb.train(
     lgb_train,
     num_boost_round=len(cv_result["l2-mean"])
 )
-y_pred = lgb_model.predict(X_train)
+y_pred = lgb_model.predict(X_val)
 
 # 시각화 확인
     # 중요도
-lgb.plot_importance(lgb_model, max_num_features=30)
+# lgb.plot_importance(lgb_model, max_num_features=30)
     # train 잘 맞는지 확인
     # train 데이터는 아주 잘 맞추고 있다.
 fig, ax = plt.subplots(1, 1, figsize=(15,7))
-ax.plot(y_train)
+
+ax.plot(y_val.values)
 ax.plot(y_pred)
 plt.tight_layout()
-
 
 
 

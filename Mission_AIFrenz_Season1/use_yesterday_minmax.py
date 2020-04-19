@@ -6,7 +6,9 @@ import matplotlib.pyplot as plt
 import lightgbm as lgb
 from sklearn.metrics import mean_squared_error
 
-os.chdir(os.path.join(os.getcwd(), 'Mission_AIFrenz_Season1'))# 디렉토리 변경
+
+if 'Mission_AIFrenz_Season1' not in os.getcwd():
+    os.chdir(os.path.join(os.getcwd(), 'Mission_AIFrenz_Season1'))# 디렉토리 변경
 data_path =  os.path.join(os.getcwd(), 'data')
 
 train = pd.read_csv(os.path.join(data_path, 'train.csv'))
@@ -92,7 +94,7 @@ test = test.fillna(0)
 
 # sensor list
 sensor_list = list(train.columns[41:60])
-
+X_list = train.columns[1:41]
 # panel dataset
 df = pd.melt(train,
         id_vars='id',
@@ -124,11 +126,15 @@ df.loc[~idx, 'mean_value'] = 0
 df3 = pd.concat([df.loc[~idx], df2], axis = 0)
 
 # X07 lag 추가
-df3['X07_lag_1'] =  df3['X07'].shift(144).fillna(0)
-df3['X07_lag_2'] =  df3['X07'].shift(144*2).fillna(0)
-df3['X07_lag_3'] =  df3['X07'].shift(144*3).fillna(0)
-df3['X07_lag_4'] =  df3['X07'].shift(144*4).fillna(0)
-df3['X07_lag_5'] =  df3['X07'].shift(144*5).fillna(0)
+for x in X_list:
+    for lag in [1,2,3,4,5]:
+        var_name = x+'_lag_'+str(lag)
+        df3[var_name] = df3[x].shift(144 * lag).fillna(0)
+# df3['X07_lag_1'] =  df3['X07'].shift(144).fillna(0)
+# df3['X07_lag_2'] =  df3['X07'].shift(144*2).fillna(0)
+# df3['X07_lag_3'] =  df3['X07'].shift(144*3).fillna(0)
+# df3['X07_lag_4'] =  df3['X07'].shift(144*4).fillna(0)
+# df3['X07_lag_5'] =  df3['X07'].shift(144*5).fillna(0)
 
 # 필요없는 컬럼 제거
 df3 = df3.drop(['datekey'], axis=1)

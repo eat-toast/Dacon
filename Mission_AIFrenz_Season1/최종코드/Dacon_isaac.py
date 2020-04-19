@@ -1,16 +1,18 @@
 import pandas as pd
 import numpy as np
 import os
-import matplotlib.pyplot as plt
 
 import lightgbm as lgb
 from sklearn.metrics import mean_squared_error
 
-os.chdir(os.path.join(os.getcwd(), 'Mission_AIFrenz_Season1'))# 디렉토리 변경
+# 파일 불러오기
+if 'Mission_AIFrenz_Season1' not in os.getcwd():
+    os.chdir(os.path.join(os.getcwd(), 'Mission_AIFrenz_Season1'))# 디렉토리 변경
 data_path =  os.path.join(os.getcwd(), 'data')
 
 train = pd.read_csv(os.path.join(data_path, 'train.csv'))
 test = pd.read_csv(os.path.join(data_path, 'test.csv'))
+
 
 # 데이터 설명
 # -     대전지역에서 측정한 실내외 19곳의 센서데이터와, 주변 지역의 기상청 공공데이터를 semi-비식별화하여 제공합니다.
@@ -27,7 +29,7 @@ test = pd.read_csv(os.path.join(data_path, 'test.csv'))
 # -     train.csv 기간 이후 80일 간의 기상청 데이터 (X00~X39)
 
 
-
+# 변수 설명
 temperature_name = ["X00","X07","X28","X31","X32"] #기온
 localpress_name  = ["X01","X06","X22","X27","X29"] #현지기압
 speed_name       = ["X02","X03","X18","X24","X26"] #풍속
@@ -48,26 +50,24 @@ print('total number of Y18 in train :',train.shape[0] - train['Y18'].isnull().su
 
 
 # id 변수를 삼각함수를 이용해 시간 변수 추가 (26님 코드 -- 기상 캐스터 잔나)
-minute = (train.id%144).astype(int)
-hour= pd.Series((train.index%144/6).astype(int))
+def make_minute(df):
+    minute = (df.id % 144).astype(int)
+    hour = pd.Series((df.index % 144 / 6).astype(int))
 
-minute_test = (test.id%144).astype(int)
-hour_test = pd.Series((test.index%144/6).astype(int))
+    min_in_day = 24 * 6
+    hour_in_day = 24
 
+    minute_sin = np.sin(np.pi * minute / min_in_day)
+    hour_sin = np.sin(np.pi * hour / hour_in_day)
 
-min_in_day = 24*6
-hour_in_day = 24
+    return minute_sin, hour_sin
 
-minute_sin = np.sin(np.pi*minute/min_in_day)
-hour_sin  = np.sin(np.pi*hour/hour_in_day)
-
-
-# 그림을 보니, sin이 더 맞는 것 같아 sin 추가
+#### 시간변수 추가
+minute_sin, hour_sin = make_minute(train)
 train['minute_sin'] = minute_sin
 train['hour_sin'] = hour_sin
-minute_sin_test = np.sin(np.pi*minute_test/min_in_day)
-hour_sin_test  = np.sin(np.pi*hour_test/hour_in_day)
 
+minute_sin_test, hour_sin_test = make_minute(test)
 test['minute_sin'] = minute_sin_test
 test['hour_sin'] = hour_sin_test
 
@@ -92,14 +92,11 @@ test = test.fillna(0)
 
 
 
-
-
 # data-set 구조 바꾸기 (뚱냥이 님 코드)
 # panel data
-# 데이터셋을 panel 형태로 바꾸어보면 어떨까요. 각각의 센서 변수들 Y00~Y18 을 panel 형태로 바꾸어보겟습니다.
 
 # sensor list
-sensor_list = list(train.columns[41:60])
+sensor_list = list(train.columns[41:60]) # Y00 ~ Y17
 
 # panel dataset
 df = pd.melt(train,
@@ -131,6 +128,7 @@ df3 = pd.concat([df.loc[~idx], df2], axis = 0)
 df3 = df3.drop(['datekey', 'date_start', 'date_end'], axis=1)
 
 ####################
+    # 모델링 데이터 준
 X_train = df3.loc[:, df3.columns[3:]]
 y_train = df3.loc[:, 'value']
 
@@ -167,7 +165,8 @@ cv_result = lgb.cv(
     nfold=5,
     early_stopping_rounds=10,
     stratified=False,
-    verbose_eval=10
+    verbose_eval=10,
+    seed= 1
 )
 print('Current parameters:\n', lgb_param)
 print('\nBest num_boost_round:', len(cv_result['l2-mean']))
@@ -180,36 +179,37 @@ lgb_model = lgb.train(
     num_boost_round=len(cv_result["l2-mean"])
 )
 
+# 변수 중요도 확인
+# lgb.plot_importance(lgb_model, max_num_features=30)
 
-lgb.plot_importance(lgb_model, max_num_features=30)
 
-
-
-# test 제출 파일 만들기
 
 #######
-# 제출
+    # test 제출 파일 만들기
+# 제출파일 불러오기
 submission = pd.read_csv(os.path.join(data_path, 'sample_submission.csv'))
-
+# 일별 예측을 위해
 submission2 = pd.merge(submission, test[['id', 'datekey']], how = 'left', on = 'id')
 
 
-df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].min()
-df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].max()
-
+# 변수 추가
 X_test['min_value'] = 0
 X_test['max_value'] = 0
 
+# test파일의 첫 날은 train의 마지막날과 이어진다.
 X_test.loc[X_test.datekey == 0, 'min_value'] = df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].min()
 X_test.loc[X_test.datekey == 0, 'max_value'] = df.loc[(df.sensor == 'Y18') & (df.datekey == 32), 'value'].max()
 
+# 필요 없는 변수 제거
 X_test = X_test.drop(['date_start', 'date_end'], axis=1)
 
-
+# 일별 예측을 시작한다.
+    # 첫날은 반복문에 들어가지 않고 한다. -- 코딩 귀찮
 X_test_hat = X_test[X_test.datekey == 0].drop('datekey', axis = 1)
 pred = lgb_model.predict(X_test_hat)
 submission2.loc[submission2.datekey == 0, 'Y18'] = pred
 
+# 2일차 부터 반복문으로 예측
 X_test.loc[X_test.datekey == 1, 'min_value'] = pred.min()
 X_test.loc[X_test.datekey == 1, 'max_value'] = pred.max()
 
@@ -218,7 +218,6 @@ for day in range(1, 80):
     pred = lgb_model.predict(X_test_hat)
     submission2.loc[submission2.datekey == day, 'Y18'] = pred
 
-    print(day)
-
+# 제출전, datekey 변수 제거
 submission2 = submission2.drop('datekey', axis = 1)
-submission2.to_csv('submit/lgb_day_max_min_20200331.csv',index = False)
+submission2.to_csv('submit/isaac.csv',index = False)
